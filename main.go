@@ -8,17 +8,17 @@ import (
 	"github.com/c9s/goprocinfo/linux"
 )
 
-type Usage interface {
-	Usage() (float32, error)
+type Metricer interface {
+	Metric() (float32, error)
 }
 
-type UsageFunc func() (float32, error)
+type MetricFunc func() (float32, error)
 
-func (f UsageFunc) Usage() (float32, error) {
+func (f MetricFunc) Metric() (float32, error) {
 	return f()
 }
 
-var MemoryUsage Usage = UsageFunc(func() (percent float32, err error) {
+var MemoryMetric Metricer = MetricFunc(func() (percent float32, err error) {
 	var mi *linux.MemInfo
 	if mi, err = linux.ReadMemInfo("/proc/meminfo"); err != nil {
 		return
@@ -37,15 +37,15 @@ func getStats() (*linux.CPUStat, error) {
 	}
 }
 
-type CPUUsage struct {
+type CPUMetric struct {
 	sampleTime time.Duration
 }
 
-func NewCPUUsage(sampleTime time.Duration) *CPUUsage {
-	return &CPUUsage{sampleTime}
+func NewCPUMetric(sampleTime time.Duration) *CPUMetric {
+	return &CPUMetric{sampleTime}
 }
 
-func (u *CPUUsage) Usage() (percent float32, err error) {
+func (u *CPUMetric) Metric() (percent float32, err error) {
 	var pstat, cstat *linux.CPUStat
 
 	if pstat, err = getStats(); err != nil {
@@ -78,13 +78,13 @@ func (u *CPUUsage) Usage() (percent float32, err error) {
 }
 
 type Threshold struct {
-	LastValue float32 // Last usage value
-	Threshold float32 // Percentage threshold
-	Metric    Usage   // Source to be checked
-	Err       error   // Errors encountered
+	LastValue float32  // Last usage value
+	Threshold float32  // Percentage threshold
+	Metric    Metricer // Source to be checked
+	Err       error    // Errors encountered
 }
 
-func NewThreshold(metric Usage, threshold float32) *Threshold {
+func NewThreshold(metric Metricer, threshold float32) *Threshold {
 	return &Threshold{
 		Threshold: threshold,
 		Metric:    metric,
@@ -92,7 +92,7 @@ func NewThreshold(metric Usage, threshold float32) *Threshold {
 }
 
 func (t *Threshold) Exceeded() bool {
-	u, err := t.Metric.Usage()
+	u, err := t.Metric.Metric()
 	if err != nil {
 		t.Err = err
 		return true
@@ -108,8 +108,8 @@ func (t *Threshold) Exceeded() bool {
 
 func main() {
 	thresholds := []*Threshold{
-		NewThreshold(NewCPUUsage(1*time.Second), 75),
-		NewThreshold(MemoryUsage, 60),
+		NewThreshold(NewCPUMetric(1*time.Second), 75),
+		NewThreshold(MemoryMetric, 60),
 	}
 
 	for i := 0; i < 20; i++ {
