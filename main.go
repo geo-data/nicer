@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"time"
 
@@ -139,43 +142,64 @@ func (s *CPUSampler) Sample(ctx context.Context, interval time.Duration, cb Samp
 	return
 }
 
-type Threshold struct {
-	Name      string  // The identifier for this threshold.
-	LastValue float32 // Last usage value
-	Threshold float32 // Percentage threshold
-	Sampler   Sampler // Sample source.
-}
+type (
+	Threshold struct {
+		Name      string  // The identifier for this threshold.
+		Threshold float32 // Percentage threshold
+		Sampler   Sampler // Sample source.
+		Ascending bool    // Whether the treshold is based on increasing values.
+	}
 
-type AlertHandler func(name string, value float32, exceeded bool)
+	AlertHandler func(name string, value float32, exceeded bool)
+	ErrorHandler func(name string, err error)
+)
 
-type ErrorHandler func(err error)
-
-func NewThreshold(name string, sampler Sampler, threshold float32) *Threshold {
+func NewThreshold(name string, sampler Sampler, threshold float32, ascending bool) *Threshold {
 	return &Threshold{
 		Name:      name,
-		Sampler:   sampler,
 		Threshold: threshold,
+		Sampler:   sampler,
+		Ascending: ascending,
 	}
 }
 
 func (t *Threshold) Poll(ctx context.Context, interval time.Duration, alert AlertHandler, eh ErrorHandler) {
+	var (
+		sendAlert func(float32)
+		lastValue float32 = t.Threshold // Last sample value
+	)
+
+	if t.Ascending {
+		sendAlert = func(metric float32) {
+			if lastValue < t.Threshold && metric >= t.Threshold {
+				alert(t.Name, metric, true)
+			} else if lastValue >= t.Threshold && metric < t.Threshold {
+				alert(t.Name, metric, false)
+			}
+		}
+	} else {
+		sendAlert = func(metric float32) {
+			if lastValue > t.Threshold && metric <= t.Threshold {
+				alert(t.Name, metric, true)
+			} else if lastValue <= t.Threshold && metric > t.Threshold {
+				alert(t.Name, metric, false)
+			}
+		}
+	}
+
 	handler := func(metric float32, err error) {
 		if err != nil {
-			eh(err)
+			eh(t.Name, err)
 			return
 		}
 
-		// See if we need to send an alert.
-		if t.LastValue < t.Threshold && metric >= t.Threshold {
-			alert(t.Name, metric, true)
-		} else if t.LastValue >= t.Threshold && metric < t.Threshold {
-			alert(t.Name, metric, false)
-		}
-		t.LastValue = metric
+		// Send an alert if required.
+		sendAlert(metric)
+		lastValue = metric
 	}
 
-	// Set the initial value as the threshold.
-	handler(t.Threshold, nil)
+	// Send an initial alert
+	alert(t.Name, t.Threshold, true)
 
 	go t.Sampler.Sample(ctx, interval, handler)
 	return
@@ -227,10 +251,10 @@ func (t *ThresholdGroup) Wait() {
 	}
 }
 
-func (t *ThresholdGroup) Poll(ctx context.Context, interval time.Duration, errh ErrorHandler) {
-	alert := func(name string, value float32, exceeded bool) {
-		log.Printf("%s %v %v", name, value, exceeded)
+func (t *ThresholdGroup) Poll(ctx context.Context, interval time.Duration, alert AlertHandler, errh ErrorHandler) {
+	alertWrap := func(name string, value float32, exceeded bool) {
 		t.updateExceeded(exceeded)
+		alert(name, value, exceeded)
 	}
 
 	for _, ct := range t.Thresholds {
@@ -238,50 +262,137 @@ func (t *ThresholdGroup) Poll(ctx context.Context, interval time.Duration, errh 
 			continue
 		}
 
-		ct.Poll(ctx, interval, alert, errh)
+		ct.Poll(ctx, interval, alertWrap, errh)
 	}
 }
 
+func scan(s *bufio.Scanner, w io.Writer, pid int) {
+	for s.Scan() {
+		fmt.Fprintf(w, "nicer %d: %s\n", pid, s.Text())
+	}
+}
+
+func startCommand(ctx context.Context, cmdStr string) (cmd *exec.Cmd, stdout, stderr io.ReadCloser, err error) {
+	cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+
+	if stdout, err = cmd.StdoutPipe(); err != nil {
+		return
+	}
+
+	if stderr, err = cmd.StderrPipe(); err != nil {
+		return
+	}
+
+	if err = cmd.Start(); err != nil {
+		return
+	}
+
+	return
+}
+
 func main() {
-	interval := time.Second * 1
+	interval := time.Second * 1 // Sampling interval.
+	wait := time.Second * 3     // Time between running commands
+
 	t := NewThresholdGroup(
-		NewThreshold("cpu", NewCPUSampler(), 90),
-		NewThreshold("ram", MemorySampler, 90),
-		NewThreshold("load", LoadAvg1MinSampler, 5),
+		NewThreshold("cpu", NewCPUSampler(), 90, true),
+		NewThreshold("ram", MemorySampler, 10, false),
+		NewThreshold("load", LoadAvg1MinSampler, (90.0/100.0)*float32(runtime.NumCPU()), true),
 	)
 
-	t.Poll(context.Background(), interval, func(err error) {
-		log.Println(err)
-	})
+	ctx := context.Background()
+
+	t.Poll(ctx, interval,
+		func(name string, value float32, exceeded bool) {
+			if exceeded {
+				log.Printf("%s threshold exceeded: %v", name, value)
+			} else {
+				log.Printf("%s threshold ok: %v", name, value)
+			}
+		},
+		func(name string, err error) {
+			log.Println(name, err)
+		},
+	)
+
+	commands := make(chan string, 5)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	go func() {
+		defer close(commands)
+
+		for scanner.Scan() {
+			cmd := scanner.Text()
+			if len(cmd) > 0 {
+				commands <- cmd
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			log.Println("reading standard input:", err)
+		}
+	}()
 
 	var wg sync.WaitGroup
 
-	scanner := bufio.NewScanner(os.Stdin)
 	i := 0
-	for scanner.Scan() {
-		i++
-		wg.Add(1)
-		time.Sleep(interval)
-		cmdText := scanner.Text()
-
-		if t.Exceeded() {
-			log.Printf("%d: waiting", i)
-			t.Wait()
-		}
-
-		log.Printf("Command %d executing: %s", i, cmdText)
-		go func(index int) {
-			defer wg.Done()
-			cmd := exec.Command("sh", "-c", cmdText)
-			if err := cmd.Run(); err != nil {
-				log.Printf("Command %d failed: %s", index, err)
-			} else {
-				log.Printf("Command %d succeeded", index)
+Process:
+	for {
+		select {
+		case cmdText, ok := <-commands:
+			if !ok {
+				break Process
 			}
-		}(i)
-	}
-	if err := scanner.Err(); err != nil {
-		log.Println("reading standard input:", err)
+
+			i++
+			if t.Exceeded() {
+				log.Println("waiting")
+				t.Wait()
+			} else if i > 1 {
+				time.Sleep(wait)
+			}
+
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+
+				cmd, stdout, stderr, err := startCommand(ctx, cmdText)
+				if err != nil {
+					log.Println("failed to start command", cmdText, err)
+					return
+				}
+
+				pid := cmd.Process.Pid
+				log.Printf("nicer %d executing pid %d: %s", i, pid, cmdText)
+
+				scanOut := bufio.NewScanner(stdout)
+				scanErr := bufio.NewScanner(stderr)
+
+				var swg sync.WaitGroup
+				swg.Add(2)
+				go func() {
+					defer swg.Done()
+					scan(scanOut, os.Stdout, pid)
+				}()
+				go func() {
+					defer swg.Done()
+					scan(scanErr, os.Stderr, pid)
+				}()
+				swg.Wait()
+				if err := scanOut.Err(); err != nil {
+					log.Println("scanning stdout for pid", pid, err)
+				}
+				if err := scanErr.Err(); err != nil {
+					log.Println("scanning stderr for pid", pid, err)
+				}
+
+				if err := cmd.Wait(); err != nil {
+					log.Printf("command pid %d failed: %s", pid, err)
+				} else {
+					log.Printf("command pid %d succeeded", pid)
+				}
+
+			}(i)
+		}
 	}
 
 	wg.Wait()
