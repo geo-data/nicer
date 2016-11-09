@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -291,18 +292,66 @@ func startCommand(ctx context.Context, cmdStr string) (cmd *exec.Cmd, stdout, st
 }
 
 func main() {
-	interval := time.Second * 1 // Sampling interval.
-	wait := time.Second * 3     // Time between running commands
+	var (
+		tcpu       = flag.Float64("cpu-threshold", 90, "percentage of cpu usage above which commands will not be executed")
+		tram       = flag.Float64("ram-threshold", 10, "percentage of free memory below which commands will not be executed")
+		tload      = flag.Float64("load-threshold", (90.0/100.0)*float64(runtime.NumCPU()), "1 minute load average above which commands will not be executed")
+		interval   = flag.Duration("interval", time.Second*1, "sampling interval for resource metrics")
+		wait       = flag.Duration("wait", time.Second*1, "duration to wait between issuing commands. Used when there is no wait on resource thresholds")
+		cin        = flag.String("input", "", "file location to read commands from. Defaults to STDIN.")
+		cout       = flag.String("stdout", "", "file location to send command standard output to. Defaults to STDOUT.")
+		cerr       = flag.String("stderr", "", "file location to send command standard error to. Defaults to STDERR.")
+		fout, ferr io.WriteCloser
+		fin        io.Reader
+	)
+
+	flag.Parse()
+
+	if len(*cin) > 0 {
+		fh, err := os.Open(*cin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer fh.Close()
+		fin = fh
+	} else {
+		fin = os.Stdin
+	}
+
+	if len(*cout) > 0 {
+		fh, err := os.Create(*cout)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer fh.Close()
+		fout = fh
+	} else {
+		fout = os.Stdout
+	}
+
+	if len(*cerr) > 0 {
+		if *cerr == *cout {
+			ferr = fout
+		} else {
+			fh, err := os.Create(*cerr)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer fh.Close()
+			ferr = fh
+		}
+	} else {
+		ferr = os.Stderr
+	}
 
 	t := NewThresholdGroup(
-		NewThreshold("cpu", NewCPUSampler(), 90, true),
-		NewThreshold("ram", MemorySampler, 10, false),
-		NewThreshold("load", LoadAvg1MinSampler, (90.0/100.0)*float32(runtime.NumCPU()), true),
+		NewThreshold("cpu", NewCPUSampler(), float32(*tcpu), true),
+		NewThreshold("ram", MemorySampler, float32(*tram), false),
+		NewThreshold("load", LoadAvg1MinSampler, float32(*tload), true),
 	)
 
 	ctx := context.Background()
-
-	t.Poll(ctx, interval,
+	t.Poll(ctx, *interval,
 		func(name string, value float32, exceeded bool) {
 			if exceeded {
 				log.Printf("%s threshold exceeded: %v", name, value)
@@ -315,9 +364,8 @@ func main() {
 		},
 	)
 
+	scanner := bufio.NewScanner(fin)
 	commands := make(chan string, 5)
-
-	scanner := bufio.NewScanner(os.Stdin)
 	go func() {
 		defer close(commands)
 
@@ -332,6 +380,16 @@ func main() {
 		}
 	}()
 
+	runCommands(ctx, commands, t, *wait, fout, ferr)
+}
+
+func runCommands(
+	ctx context.Context,
+	commands <-chan string,
+	t *ThresholdGroup,
+	wait time.Duration,
+	fout, ferr io.Writer,
+) {
 	var wg sync.WaitGroup
 
 	i := 0
@@ -349,6 +407,10 @@ Process:
 				t.Wait()
 			} else if i > 1 {
 				time.Sleep(wait)
+				if t.Exceeded() {
+					log.Println("waiting")
+					t.Wait()
+				}
 			}
 
 			wg.Add(1)
@@ -362,7 +424,7 @@ Process:
 				}
 
 				pid := cmd.Process.Pid
-				log.Printf("nicer %d executing pid %d: %s", i, pid, cmdText)
+				log.Printf("nicer %d executing pid %d: %s", index, pid, cmdText)
 
 				scanOut := bufio.NewScanner(stdout)
 				scanErr := bufio.NewScanner(stderr)
@@ -371,11 +433,11 @@ Process:
 				swg.Add(2)
 				go func() {
 					defer swg.Done()
-					scan(scanOut, os.Stdout, pid)
+					scan(scanOut, fout, pid)
 				}()
 				go func() {
 					defer swg.Done()
-					scan(scanErr, os.Stderr, pid)
+					scan(scanErr, ferr, pid)
 				}()
 				swg.Wait()
 				if err := scanOut.Err(); err != nil {
