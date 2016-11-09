@@ -10,8 +10,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/c9s/goprocinfo/linux"
@@ -275,20 +277,28 @@ func scan(s *bufio.Scanner, w io.Writer, pid int) {
 
 func startCommand(ctx context.Context, cmdStr string) (cmd *exec.Cmd, stdout, stderr io.ReadCloser, err error) {
 	cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
-
 	if stdout, err = cmd.StdoutPipe(); err != nil {
 		return
 	}
-
 	if stderr, err = cmd.StderrPipe(); err != nil {
 		return
 	}
-
 	if err = cmd.Start(); err != nil {
 		return
 	}
-
 	return
+}
+
+func catchSignals(cancel context.CancelFunc) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		for sig := range c {
+			log.Printf("received %s signal", sig.String())
+			cancel()
+		}
+	}()
 }
 
 func main() {
@@ -350,7 +360,9 @@ func main() {
 		NewThreshold("load", LoadAvg1MinSampler, float32(*tload), true),
 	)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	catchSignals(cancel)
+
 	t.Poll(ctx, *interval,
 		func(name string, value float32, exceeded bool) {
 			if exceeded {
@@ -396,6 +408,8 @@ func runCommands(
 Process:
 	for {
 		select {
+		case <-ctx.Done():
+			break Process
 		case cmdText, ok := <-commands:
 			if !ok {
 				break Process
