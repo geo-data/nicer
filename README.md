@@ -17,7 +17,7 @@ load metrics.
 ## Example
 
 The following shell command simulates a set of 100 concurrent CPU bound tasks
-taking between 5 and 50 seconds for each task:
+taking between 5 and 50 seconds per task:
 
 ```
 for i in {1..100}
@@ -110,7 +110,7 @@ builds and runs the the project using
 [Realize](https://tockins.github.io/realize/).  This provides live building and
 reloading of the `nicer` binary whenever source files change.
 
-# License
+## License
 
 [![license](https://img.shields.io/github/license/geo-data/nicer.svg)](https://github.com/geo-data/nicer/blob/master/LICENSE)
 
