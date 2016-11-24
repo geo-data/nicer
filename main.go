@@ -19,6 +19,18 @@ import (
 	"github.com/c9s/goprocinfo/linux"
 )
 
+// These get set on build.
+var version, commit string
+
+func init() {
+	if version == "" {
+		version = "No version information,"
+	}
+	if commit == "" {
+		commit = "unknown"
+	}
+}
+
 type SampleHandler func(metric float32, err error)
 
 type Sampler interface {
@@ -311,11 +323,17 @@ func main() {
 		cin        = flag.String("input", "", "file location to read commands from. Defaults to STDIN.")
 		cout       = flag.String("stdout", "", "file location to send command standard output to. Defaults to STDOUT.")
 		cerr       = flag.String("stderr", "", "file location to send command standard error to. Defaults to STDERR.")
+		v          = flag.Bool("v", false, "print version information and exit.")
 		fout, ferr io.WriteCloser
 		fin        io.Reader
 	)
 
 	flag.Parse()
+
+	if *v {
+		fmt.Printf("%s commit=%s\n", version, commit)
+		os.Exit(0)
+	}
 
 	if len(*cin) > 0 {
 		fh, err := os.Open(*cin)
