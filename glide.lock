@@ -1,0 +1,10 @@
+hash: e8f903f82b20fe456d1128f84eb59a578452c6d4fc9beb19c49600752292375f
+updated: 2016-11-24T11:25:26.083383156Z
+imports:
+- name: github.com/c9s/goprocinfo
+  version: 19cb9f127a9c8d2034cf59ccb683cdb94b9deb6c
+  subpackages:
+  - linux
+- name: github.com/tockins/realize
+  version: d2ca592be23a301424c45d17ee9129bf264edf06
+testImports: []

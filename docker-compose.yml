@@ -1,0 +1,17 @@
+##
+# Docker compose file for creating a development enviornment.
+#
+# This sets up a development environment which can be entered by running:
+#
+#    docker-compose run dev
+#
+
+# The development environment.
+dev:
+  build: .
+  dockerfile: ./docker/Dockerfile
+  volumes:
+    - '.:/go/src/github.com/geo-data/nicer'
+  hostname: nicer
+  ports:
+    - '5000:5000'
