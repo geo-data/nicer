@@ -1,5 +1,9 @@
 # Nicer
 
+[![GitHub release](https://img.shields.io/github/release/geo-data/nicer.svg)](https://github.com/geo-data/nicer/releases/latest)
+[![Travis CI](https://img.shields.io/travis/geo-data/nicer.svg)](https://travis-ci.org/geo-data/nicer)
+[![Go Report Card](https://goreportcard.com/badge/github.com/geo-data/nicer)](https://goreportcard.com/report/github.com/geo-data/nicer)
+
 Nicer is a command line tool designed to concurrently execute shell commands on
 Linux systems once various system resource metrics fall within acceptable
 tolerances.  As such it acts as a rate limiter for commands, delaying their
@@ -101,5 +105,7 @@ builds and runs the the project using
 reloading of the `nicer` binary whenever source files change.
 
 # License
+
+[![license](https://img.shields.io/github/license/geo-data/nicer.svg)](https://github.com/geo-data/nicer/blob/master/LICENSE)
 
 MIT - See the file `LICENSE` for details.
