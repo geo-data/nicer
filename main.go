@@ -22,6 +22,7 @@ import (
 // These get set on build.
 var version, commit string
 
+// init checks and optionally initialises the version strings.
 func init() {
 	if version == "" {
 		version = "No version information,"
@@ -31,14 +32,22 @@ func init() {
 	}
 }
 
+// SampleHandler represents a handler that is called every time a metric is
+// sampled.
 type SampleHandler func(metric float32, err error)
 
+// Sampler defines the interface to be implemented for sampling metrics. The
+// Sample method should not return until the context is cancelled.
 type Sampler interface {
 	Sample(ctx context.Context, interval time.Duration, cb SampleHandler)
 }
 
+// SampleFunc enhances functions matching the signature to conform to the
+// Sampler interface.
 type SampleFunc func() (float32, error)
 
+// Sample implements the Sampler interface and will call f whenever a metric
+// needs to be sampled.  Sample will not return until the context is cancelled.
 func (f SampleFunc) Sample(ctx context.Context, interval time.Duration, cb SampleHandler) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -55,6 +64,8 @@ func (f SampleFunc) Sample(ctx context.Context, interval time.Duration, cb Sampl
 }
 
 var (
+	// MemorySampler defines a Sampler that obtains the percentage of free
+	// memory as calculated from /proc/meminfo.
 	MemorySampler Sampler = SampleFunc(func() (percent float32, err error) {
 		var mi *linux.MemInfo
 		if mi, err = linux.ReadMemInfo("/proc/meminfo"); err != nil {
@@ -66,6 +77,8 @@ var (
 		return
 	})
 
+	// LoadAvg1MinSampler defines a Sampler that obtains the average system load
+	// as calculated for the last minute from /proc/loadavg.
 	LoadAvg1MinSampler Sampler = SampleFunc(func() (load float32, err error) {
 		var l *linux.LoadAvg
 		if l, err = linux.ReadLoadAvg("/proc/loadavg"); err != nil {
@@ -77,27 +90,34 @@ var (
 	})
 )
 
+// getStats returns the linux.CPUStat for all CPUs.
 func getStats() (*linux.CPUStat, error) {
-	if stat, err := linux.ReadStat("/proc/stat"); err != nil {
+	stat, err := linux.ReadStat("/proc/stat")
+	if err != nil {
 		return nil, err
-	} else {
-		return &stat.CPUStatAll, nil
 	}
+	return &stat.CPUStatAll, nil
 }
 
+// CPUSampler defines a Sampler which measures percentage CPU usage.
 type CPUSampler struct {
+	// prevStat caches the last measurement.
 	prevStat *linux.CPUStat
 }
 
+// NewCPUSampler instantiates a CPUSampler.
 func NewCPUSampler() *CPUSampler {
 	return &CPUSampler{}
 }
 
+// Init initialises the sampler by obtaining and cachine an initial measurement.
 func (s *CPUSampler) Init() (err error) {
 	s.prevStat, err = getStats()
 	return
 }
 
+// Measure calculates the percentage CPU usage by comparing a new measurement
+// against the previous measurement.
 func (s *CPUSampler) Measure() (percent float32, err error) {
 	var curStat *linux.CPUStat
 	curStat, err = getStats()
@@ -134,6 +154,7 @@ func (s *CPUSampler) Measure() (percent float32, err error) {
 	return
 }
 
+// Sample implements the Sampler interface to perform CPU usage measurements.
 func (s *CPUSampler) Sample(ctx context.Context, interval time.Duration, cb SampleHandler) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -154,17 +175,27 @@ func (s *CPUSampler) Sample(ctx context.Context, interval time.Duration, cb Samp
 }
 
 type (
+	// Threshold combines a Sampler with a threshold value and arbitrary name.
+	// It can then poll the Sampler and compare metrics against the threshold,
+	// triggering alerts when a threshold is crossed.
 	Threshold struct {
 		Name      string  // The identifier for this threshold.
-		Threshold float32 // Percentage threshold
+		Threshold float32 // The threshold value.
 		Sampler   Sampler // Sample source.
 		Ascending bool    // Whether the treshold is based on increasing values.
 	}
 
+	// AlertHandler represents a function that is called whenever a threshold
+	// value is crossed.  If the threshold is exceeded, exceeded will be true or
+	// false otherwise.
 	AlertHandler func(name string, value float32, exceeded bool)
+
+	// ErrorHandler represents a function that is called whenever a Sampler
+	// encounters an error.
 	ErrorHandler func(name string, err error)
 )
 
+// NewThreshold instantiates a Threshold.
 func NewThreshold(name string, sampler Sampler, threshold float32, ascending bool) *Threshold {
 	return &Threshold{
 		Name:      name,
@@ -174,6 +205,9 @@ func NewThreshold(name string, sampler Sampler, threshold float32, ascending boo
 	}
 }
 
+// Poll samples the Threshold Sampler every interval.  If the threshold value is
+// crossed, AlertHandler is called.  If the sampler encounters an error,
+// ErrorHandler is called. ctx is passed to the Sampler. Poll does not block.
 func (t *Threshold) Poll(ctx context.Context, interval time.Duration, alert AlertHandler, eh ErrorHandler) {
 	var (
 		sendAlert func(float32)
@@ -216,6 +250,9 @@ func (t *Threshold) Poll(ctx context.Context, interval time.Duration, alert Aler
 	return
 }
 
+// ThresholdGroup represents a collection of Threshold instances.  It is used to
+// determine whether any thresholds have been exceeded, and to wait until no
+// thresholds is exceeded.
 type ThresholdGroup struct {
 	sync.RWMutex
 	Thresholds []*Threshold
@@ -223,10 +260,12 @@ type ThresholdGroup struct {
 	wait       chan struct{}
 }
 
+// NewThresholdGroup instantiates a ThresholdGroup.
 func NewThresholdGroup(thresholds ...*Threshold) *ThresholdGroup {
 	return &ThresholdGroup{Thresholds: thresholds}
 }
 
+// updateExceeded updates the internal reference count of exceeded thresholds.
 func (t *ThresholdGroup) updateExceeded(exceeded bool) {
 	t.Lock()
 	defer t.Unlock()
@@ -247,12 +286,14 @@ func (t *ThresholdGroup) updateExceeded(exceeded bool) {
 	return
 }
 
+// Exceeded returns true if any thresholds have been exceeded, false otherwise.
 func (t *ThresholdGroup) Exceeded() bool {
 	t.RLock()
 	defer t.RUnlock()
 	return t.exceeded != 0
 }
 
+// Wait blocks until no thresholds are exceeded.
 func (t *ThresholdGroup) Wait() {
 	select {
 	case _, ok := <-t.wait:
@@ -262,6 +303,7 @@ func (t *ThresholdGroup) Wait() {
 	}
 }
 
+// Poll delegates to the Poll methods of all the Threshold instances managed by t.  It does not block.
 func (t *ThresholdGroup) Poll(ctx context.Context, interval time.Duration, alert AlertHandler, errh ErrorHandler) {
 	alertWrap := func(name string, value float32, exceeded bool) {
 		t.updateExceeded(exceeded)
