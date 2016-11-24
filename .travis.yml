@@ -12,6 +12,8 @@ before_install:
 - sudo mv docker-compose /usr/local/bin
 script:
 - docker-compose run dev make
+before_deploy:
+- sudo chown --changes --recursive $(whoami):$(id --group $(whoami)) .
 deploy:
   provider: releases
   api_key:
