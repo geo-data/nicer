@@ -69,16 +69,22 @@ capabilities.
 ## Limitations
 
 `nicer` performs no management of the commands it runs, other than passing on
-any interrupt signals it receives.  As an example of the implications, `nicer`
-may run multiple commands in parallel, having ensured that system resources were
-within specified limits **at the time** the commands were executed.  However, if
-these commands use resources irregularly, for example making heavy use of the
-CPU some time after execution, there is a chance that resources will become
-overloaded.  The risk of this happening is application dependent but the `-wait`
-flag may be of use in certain circumstances in delaying execution between one
-command and the next, giving the previous command time to hit its stride.
+any interrupt signals it receives.  As an example of the implications of this,
+`nicer` may run multiple commands in parallel, having ensured that system
+resources were within specified limits **at the time** the commands were
+executed.  However, if these commands use resources irregularly, for example
+making heavy use of the CPU some time after execution, there is a chance that
+resources will become overloaded.  The risk of this happening is application
+dependent but the `-wait` flag may be of use in certain circumstances in
+delaying execution between one command and the next, giving the previous command
+time to hit its stride.
 
 ## Installation
+
+### Binary download
+
+You can download a self contained `nicer` binary compiled for Linux x86_64 from
+the [latest release](https://github.com/geo-data/nicer/releases/latest).
 
 ### From source
 
