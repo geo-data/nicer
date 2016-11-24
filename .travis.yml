@@ -17,5 +17,6 @@ deploy:
   api_key:
     secure: XfKo815/JmjwpIsRNl0zPHtxn8G/wg0S9OzGsvPLzoT44mS7/YjhoV0nAQQLh3KSWBkujtc7iIdIsXOvRfmtVavLfiB7XYRe+WH8r/1dWB7DAWv+kkYYlofVjv/bI5mwTJk+kdDp9Cwx2hXriv8Y9XokN3xbgU5sOOEX5UkFcF1161RVht2ZXBcNs4WXOjcd349U2VcBB4FvPeq4mpq7sAcbP5Rp3OdJGi1qc5tlZ9BagbGQKOexr401mANDvWsjeNRjI81b+PLV6IueypQYwK50hBhgufnekkZrvLDvjr1bbg9/0Z+QbAoo0sADHFAQy0UoL/fQLr2pDgcyvSN6Zoldq7gOUQQBaaArqHcbAYUxwzeYSzRbOp4c7EuOHnIPWkhpEHIiHWPhykzTo03Wr/FQFstIYysIPHRAEUbJDNniz0bmCnATqa+3WIbgFEyi4FlBqM+A8kL65MNldUX3jHwlwju2S6hXg3QEiWrR/B52svC0DSoRUV59ke7d7rTRvME6WxuLFXheM2rbsQjOjNv63gwuHfjinQrn59CjdCwunxujWPanQWKfkjMqeZaZF/GBH7Qk7CIWPqm4sFdNd2PR0HU+nGv2ypjFZX5YwWWtAuCJKYd4XTXjHqUC5RL/51kTavf99TNAlazizh3cwzM8x2J/aqu6KDhYqUXQshk=
   file: nicer
+  skip_cleanup: true
   on:
-    repo: geo-data/nicer
+    tags: true
