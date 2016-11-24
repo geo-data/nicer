@@ -52,8 +52,6 @@ func (f SampleFunc) Sample(ctx context.Context, interval time.Duration, cb Sampl
 			return
 		}
 	}
-
-	return
 }
 
 var (
@@ -153,8 +151,6 @@ func (s *CPUSampler) Sample(ctx context.Context, interval time.Duration, cb Samp
 			return
 		}
 	}
-
-	return
 }
 
 type (
