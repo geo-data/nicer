@@ -30,8 +30,8 @@ type (
 	ErrorHandler func(name string, err error)
 )
 
-// NewThreshold instantiates a Threshold.
-func NewThreshold(name string, sampler sample.Sampler, threshold float32, ascending bool) *Threshold {
+// New instantiates a Threshold.
+func New(name string, sampler sample.Sampler, threshold float32, ascending bool) *Threshold {
 	return &Threshold{
 		Name:      name,
 		Threshold: threshold,

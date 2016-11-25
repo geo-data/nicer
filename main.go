@@ -85,10 +85,10 @@ func main() {
 		ferr = os.Stderr
 	}
 
-	t := threshold.NewThresholdGroup(
-		threshold.NewThreshold("cpu", sample.NewCPUSampler(), float32(*tcpu), true),
-		threshold.NewThreshold("ram", sample.MemorySampler, float32(*tram), false),
-		threshold.NewThreshold("load", sample.LoadAvg1MinSampler, float32(*tload), true),
+	t := threshold.NewGroup(
+		threshold.New("cpu", sample.NewCPUSampler(), float32(*tcpu), true),
+		threshold.New("ram", sample.MemorySampler, float32(*tram), false),
+		threshold.New("load", sample.LoadAvg1MinSampler, float32(*tload), true),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -129,7 +129,7 @@ func main() {
 func runCommands(
 	ctx context.Context,
 	commands <-chan string,
-	t *threshold.ThresholdGroup,
+	t *threshold.Group,
 	wait time.Duration,
 	fout, ferr io.Writer,
 ) {
