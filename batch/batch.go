@@ -15,6 +15,23 @@ import (
 )
 
 type (
+	// Batch provides the machinery to run multiple commands in
+	// parallel. Thresholds can be set against system metrics to ensure commands
+	// are not run when these thresholds are exceeded.  Hooks can also be set to
+	// trace and act on these events.
+	Batch struct {
+		Commander  Commander
+		Thresholds *threshold.Group
+		Wait       time.Duration
+		events     *Events
+	}
+
+	// Commander provides an interface for creating Commands from a specific
+	// shell command string.
+	Commander interface {
+		CommandContext(ctx context.Context, cmd string) (*exec.Cmd, error)
+	}
+
 	// Events is a set of hooks to be run at various stages of a Batch run.
 	Events struct {
 		Waiting     func()
@@ -26,23 +43,14 @@ type (
 		StdoutErr   func(count, pid int, cmd string, err error)
 		StderrErr   func(count, pid int, cmd string, err error)
 	}
-
-	// Batch provides the machinery to run multiple commands in
-	// parallel. Thresholds can be set against system metrics to ensure commands
-	// are not run when these thresholds are exceeded.  Hooks can also be set to
-	// trace and act on these events.
-	Batch struct {
-		Thresholds *threshold.Group
-		Wait       time.Duration
-		events     *Events
-	}
 )
 
 // New instantiates a new Batch with specified thresholds and events.  The wait
 // parameter determines how long to wait between running commands when there is
 // no threshold wait for system metrics to return to tolerable limits.
-func New(t *threshold.Group, wait time.Duration, e *Events) (b *Batch) {
+func New(c Commander, t *threshold.Group, wait time.Duration, e *Events) (b *Batch) {
 	b = &Batch{
+		Commander:  c,
 		Thresholds: t,
 		Wait:       wait,
 	}
@@ -142,7 +150,7 @@ Process:
 // runCommand executes an individual command.
 func (b *Batch) runCommand(ctx context.Context, cmdStr string, count int) {
 	// Start the command and get the output streams.
-	cmd, stdout, stderr, err := startCommand(ctx, cmdStr)
+	cmd, stdout, stderr, err := startCommand(ctx, b.Commander, cmdStr)
 	if err != nil {
 		b.events.CmdFailed(count, cmdStr, err)
 		return
@@ -188,9 +196,11 @@ func (b *Batch) runCommand(ctx context.Context, cmdStr string, count int) {
 
 // startCommand executes a command string and returns the command handle and
 // associated output streams.
-func startCommand(ctx context.Context, cmdStr string) (cmd *exec.Cmd, stdout, stderr io.ReadCloser, err error) {
+func startCommand(ctx context.Context, command Commander, cmdStr string) (cmd *exec.Cmd, stdout, stderr io.ReadCloser, err error) {
 	// Obtain a command.
-	cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	if cmd, err = command.CommandContext(ctx, cmdStr); err != nil {
+		return
+	}
 
 	// Get the output streams.
 	if stdout, err = cmd.StdoutPipe(); err != nil {

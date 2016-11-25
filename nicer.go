@@ -102,7 +102,7 @@ func main() {
 	}()
 
 	// Handle the various events during command execution.
-	b := batch.New(t, *wait, &batch.Events{
+	b := batch.New(batch.ShellCommand, t, *wait, &batch.Events{
 		Waiting: func() {
 			log.Println("waiting...")
 		},
