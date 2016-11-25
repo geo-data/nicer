@@ -3,13 +3,14 @@
 [![GitHub release](https://img.shields.io/github/release/geo-data/nicer.svg)](https://github.com/geo-data/nicer/releases/latest)
 [![Travis CI](https://img.shields.io/travis/geo-data/nicer.svg)](https://travis-ci.org/geo-data/nicer)
 [![Go Report Card](https://goreportcard.com/badge/github.com/geo-data/nicer)](https://goreportcard.com/report/github.com/geo-data/nicer)
+[![GoDoc](https://img.shields.io/badge/documentation-godoc-blue.svg)](https://godoc.org/github.com/geo-data/nicer)
 
 Nicer is a command line tool designed to concurrently execute shell commands on
 Linux systems once various system resource metrics fall within acceptable
 tolerances.  As such it acts as a rate limiter for commands, delaying their
 execution until resources become available and thereby reducing the chances of
 the entire system becoming overloaded.  This makes it particularly suited to
-managing queued tasks.
+managing batch processes.
 
 Metrics currently assessed are: CPU usage; memory usage and the 1 minute system
 load metrics.
@@ -58,6 +59,7 @@ Usage of nicer:
         file location to send command standard error to. Defaults to STDERR.
   -stdout string
         file location to send command standard output to. Defaults to STDOUT.
+  -v    print version information and exit.
   -wait duration
         duration to wait between issuing commands. Used when there is no wait on resource thresholds (default 1s)
 
@@ -68,16 +70,17 @@ capabilities.
 
 ## Limitations
 
-`nicer` performs no management of the commands it runs, other than passing on
-any interrupt signals it receives.  As an example of the implications of this,
-`nicer` may run multiple commands in parallel, having ensured that system
-resources were within specified limits **at the time** the commands were
-executed.  However, if these commands use resources irregularly, for example
-making heavy use of the CPU some time after execution, there is a chance that
-resources will become overloaded.  The risk of this happening is application
-dependent but the `-wait` flag may be of use in certain circumstances in
-delaying execution between one command and the next, giving the previous command
-time to hit its stride.
+After deciding when to execute them, `nicer` does not manage the commands passed
+to it, other than relaying any interrupt signals it receives.  This has
+implications for long running processes which may place irregular loads on
+system resources over time: when running in parallel there is a chance that
+resource contention will increase over time even if it fell within tolerances
+**at the time** individual commands were started.
+
+The risk of this happening is application dependent but the `-wait` flag may be
+of use in certain circumstances in delaying execution between one command and
+the next, giving the previous command time to hit its stride and affect the
+metrics sampled by `nicer`.
 
 ## Installation
 
