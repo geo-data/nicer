@@ -14,27 +14,29 @@ import (
 	"github.com/geo-data/nicer/threshold"
 )
 
-// Events is a set of hooks to be run at various stages of a Batch.
-type Events struct {
-	Waiting     func()
-	CmdStarted  func(count, pid int, cmd string)
-	CmdFinished func(count, pid int, cmd string, err error)
-	CmdFailed   func(count int, cmd string, err error)
-	CmdStdout   func(count, pid int, cmd string, line []byte)
-	CmdStderr   func(count, pid int, cmd string, line []byte)
-	StdoutErr   func(count, pid int, cmd string, err error)
-	StderrErr   func(count, pid int, cmd string, err error)
-}
+type (
+	// Events is a set of hooks to be run at various stages of a Batch run.
+	Events struct {
+		Waiting     func()
+		CmdStarted  func(count, pid int, cmd string)
+		CmdFinished func(count, pid int, cmd string, err error)
+		CmdFailed   func(count int, cmd string, err error)
+		CmdStdout   func(count, pid int, cmd string, line []byte)
+		CmdStderr   func(count, pid int, cmd string, line []byte)
+		StdoutErr   func(count, pid int, cmd string, err error)
+		StderrErr   func(count, pid int, cmd string, err error)
+	}
 
-// Batch provides the machinery to run multiple commands in parallel. Thresholds
-// can be set against system metrics to ensure commands are not run when these
-// thresholds are exceeded.  Hooks can also be set to trace and act on these
-// events.
-type Batch struct {
-	Thresholds *threshold.Group
-	Wait       time.Duration
-	events     *Events
-}
+	// Batch provides the machinery to run multiple commands in
+	// parallel. Thresholds can be set against system metrics to ensure commands
+	// are not run when these thresholds are exceeded.  Hooks can also be set to
+	// trace and act on these events.
+	Batch struct {
+		Thresholds *threshold.Group
+		Wait       time.Duration
+		events     *Events
+	}
+)
 
 // New instantiates a new Batch with specified thresholds and events.  The wait
 // parameter determines how long to wait between running commands when there is
