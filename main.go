@@ -6,16 +6,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"runtime"
-	"sync"
 	"syscall"
 	"time"
 
+	"github.com/geo-data/nicer/batch"
 	"github.com/geo-data/nicer/sample"
 	"github.com/geo-data/nicer/streams"
 	"github.com/geo-data/nicer/threshold"
@@ -88,14 +86,14 @@ func main() {
 
 	// Start reading commands from the input, one command per line.
 	scanner := bufio.NewScanner(s.In)
-	commands := make(chan string, 5)
+	cmds := make(chan string, 5)
 	go func() {
-		defer close(commands)
+		defer close(cmds)
 
 		for scanner.Scan() {
-			cmd := scanner.Text()
-			if len(cmd) > 0 {
-				commands <- cmd
+			cmdStr := scanner.Text()
+			if len(cmdStr) > 0 {
+				cmds <- cmdStr
 			}
 		}
 		if err := scanner.Err(); err != nil {
@@ -103,8 +101,40 @@ func main() {
 		}
 	}()
 
-	// Run the commands.
-	runCommands(ctx, commands, t, *wait, s.Out, s.Err)
+	// Handle the various events during command execution.
+	b := batch.New(t, *wait, &batch.Events{
+		Waiting: func() {
+			log.Println("waiting...")
+		},
+		CmdStarted: func(count, pid int, cmd string) {
+			log.Printf("job %d pid %d started: %s", count, pid, cmd)
+		},
+		CmdFinished: func(count, pid int, cmd string, err error) {
+			if err != nil {
+				log.Printf("job %d pid %d failed: %s", count, pid, err)
+			} else {
+				log.Printf("job %d pid %d succeeded", count, pid)
+			}
+		},
+		CmdStdout: func(count, pid int, cmd string, line []byte) {
+			fmt.Fprintf(s.Out, "job %d pid %d stdout: %s\n", count, pid, string(line))
+		},
+		CmdStderr: func(count, pid int, cmd string, line []byte) {
+			fmt.Fprintf(s.Err, "job %d pid %d stderr: %s\n", count, pid, string(line))
+		},
+		CmdFailed: func(count int, cmd string, err error) {
+			log.Printf("job %d failed to start command %s\n", cmd, err)
+		},
+		StdoutErr: func(count, pid int, cmd string, err error) {
+			log.Printf("job %d pid %d error scanning stdout: %s\n", count, pid, err)
+		},
+		StderrErr: func(count, pid int, cmd string, err error) {
+			log.Printf("job %d pid %d error scanning stderr: %s\n", count, pid, err)
+		},
+	})
+
+	// Run the input commands.
+	b.Run(ctx, cmds)
 }
 
 // catchSignals cancels the context whenever an interrupt is received.
@@ -118,103 +148,4 @@ func catchSignals(cancel context.CancelFunc) {
 			cancel()
 		}
 	}()
-}
-
-func runCommands(
-	ctx context.Context,
-	commands <-chan string,
-	t *threshold.Group,
-	wait time.Duration,
-	fout, ferr io.Writer,
-) {
-	var wg sync.WaitGroup
-
-	i := 0
-Process:
-	for {
-		select {
-		case <-ctx.Done():
-			break Process
-		case cmdText, ok := <-commands:
-			if !ok {
-				break Process
-			}
-
-			i++
-			if t.Exceeded() {
-				log.Println("waiting")
-				t.Wait()
-			} else if i > 1 {
-				time.Sleep(wait)
-				if t.Exceeded() {
-					log.Println("waiting")
-					t.Wait()
-				}
-			}
-
-			wg.Add(1)
-			go func(index int) {
-				defer wg.Done()
-
-				cmd, stdout, stderr, err := startCommand(ctx, cmdText)
-				if err != nil {
-					log.Println("failed to start command", cmdText, err)
-					return
-				}
-
-				pid := cmd.Process.Pid
-				log.Printf("nicer %d executing pid %d: %s", index, pid, cmdText)
-
-				scanOut := bufio.NewScanner(stdout)
-				scanErr := bufio.NewScanner(stderr)
-
-				var swg sync.WaitGroup
-				swg.Add(2)
-				go func() {
-					defer swg.Done()
-					scan(scanOut, fout, pid)
-				}()
-				go func() {
-					defer swg.Done()
-					scan(scanErr, ferr, pid)
-				}()
-				swg.Wait()
-				if err := scanOut.Err(); err != nil {
-					log.Println("scanning stdout for pid", pid, err)
-				}
-				if err := scanErr.Err(); err != nil {
-					log.Println("scanning stderr for pid", pid, err)
-				}
-
-				if err := cmd.Wait(); err != nil {
-					log.Printf("command pid %d failed: %s", pid, err)
-				} else {
-					log.Printf("command pid %d succeeded", pid)
-				}
-
-			}(i)
-		}
-	}
-
-	wg.Wait()
-}
-
-func startCommand(ctx context.Context, cmdStr string) (cmd *exec.Cmd, stdout, stderr io.ReadCloser, err error) {
-	cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
-	if stdout, err = cmd.StdoutPipe(); err != nil {
-		return
-	}
-	if stderr, err = cmd.StderrPipe(); err != nil {
-		return
-	}
-	if err = cmd.Start(); err != nil {
-		return
-	}
-	return
-}
-
-func scan(s *bufio.Scanner, w io.Writer, pid int) {
-	for s.Scan() {
-		fmt.Fprintf(w, "nicer %d: %s\n", pid, s.Text())
-	}
 }
