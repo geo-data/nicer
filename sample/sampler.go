@@ -10,24 +10,24 @@ import (
 )
 
 type (
-	// SampleHandler represents a handler that is called every time a metric is
+	// Handler represents a handler that is called every time a metric is
 	// sampled.
-	SampleHandler func(metric float32, err error)
+	Handler func(metric float32, err error)
 
 	// Sampler defines the interface to be implemented for sampling metrics. The
 	// Sample method should not return until the context is cancelled.
 	Sampler interface {
-		Sample(ctx context.Context, interval time.Duration, cb SampleHandler)
+		Sample(ctx context.Context, interval time.Duration, cb Handler)
 	}
 
-	// SampleFunc enhances functions matching the signature to conform to the
-	// Sampler interface.
-	SampleFunc func() (float32, error)
+	// Func enhances functions matching the signature to conform to the Sampler
+	// interface.
+	Func func() (float32, error)
 )
 
 // Sample implements the Sampler interface and will call f whenever a metric
 // needs to be sampled.  Sample will not return until the context is cancelled.
-func (f SampleFunc) Sample(ctx context.Context, interval time.Duration, cb SampleHandler) {
+func (f Func) Sample(ctx context.Context, interval time.Duration, cb Handler) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 
@@ -43,9 +43,9 @@ func (f SampleFunc) Sample(ctx context.Context, interval time.Duration, cb Sampl
 }
 
 var (
-	// MemorySampler defines a Sampler that obtains the percentage of free
-	// memory as calculated from /proc/meminfo.
-	MemorySampler Sampler = SampleFunc(func() (percent float32, err error) {
+	// Memory defines a Sampler that obtains the percentage of free memory as
+	// calculated from /proc/meminfo.
+	Memory Sampler = Func(func() (percent float32, err error) {
 		var mi *linux.MemInfo
 		if mi, err = linux.ReadMemInfo("/proc/meminfo"); err != nil {
 			return
@@ -56,9 +56,9 @@ var (
 		return
 	})
 
-	// LoadAvg1MinSampler defines a Sampler that obtains the average system load
-	// as calculated for the last minute from /proc/loadavg.
-	LoadAvg1MinSampler Sampler = SampleFunc(func() (load float32, err error) {
+	// LoadAvg1Min defines a Sampler that obtains the average system load as
+	// calculated for the last minute from /proc/loadavg.
+	LoadAvg1Min Sampler = Func(func() (load float32, err error) {
 		var l *linux.LoadAvg
 		if l, err = linux.ReadLoadAvg("/proc/loadavg"); err != nil {
 			return

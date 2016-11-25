@@ -8,26 +8,26 @@ import (
 	"github.com/c9s/goprocinfo/linux"
 )
 
-// CPUSampler defines a Sampler which measures percentage CPU usage.
-type CPUSampler struct {
+// CPU defines a Sampler which measures percentage CPU usage.
+type CPU struct {
 	// prevStat caches the last measurement.
 	prevStat *linux.CPUStat
 }
 
-// NewCPUSampler instantiates a CPUSampler.
-func NewCPUSampler() *CPUSampler {
-	return &CPUSampler{}
+// NewCPU instantiates a CPU.
+func NewCPU() *CPU {
+	return &CPU{}
 }
 
 // Init initialises the sampler by obtaining and cachine an initial measurement.
-func (s *CPUSampler) Init() (err error) {
+func (s *CPU) Init() (err error) {
 	s.prevStat, err = getStats()
 	return
 }
 
 // Measure calculates the percentage CPU usage by comparing a new measurement
 // against the previous measurement.
-func (s *CPUSampler) Measure() (percent float32, err error) {
+func (s *CPU) Measure() (percent float32, err error) {
 	var curStat *linux.CPUStat
 	curStat, err = getStats()
 	if err != nil {
@@ -64,7 +64,7 @@ func (s *CPUSampler) Measure() (percent float32, err error) {
 }
 
 // Sample implements the Sampler interface to perform CPU usage measurements.
-func (s *CPUSampler) Sample(ctx context.Context, interval time.Duration, cb SampleHandler) {
+func (s *CPU) Sample(ctx context.Context, interval time.Duration, cb Handler) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 

@@ -86,9 +86,9 @@ func main() {
 	}
 
 	t := threshold.NewGroup(
-		threshold.New("cpu", sample.NewCPUSampler(), float32(*tcpu), true),
-		threshold.New("ram", sample.MemorySampler, float32(*tram), false),
-		threshold.New("load", sample.LoadAvg1MinSampler, float32(*tload), true),
+		threshold.New("cpu", sample.NewCPU(), float32(*tcpu), true),
+		threshold.New("ram", sample.Memory, float32(*tram), false),
+		threshold.New("load", sample.LoadAvg1Min, float32(*tload), true),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
