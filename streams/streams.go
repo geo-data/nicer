@@ -14,10 +14,10 @@ type Streams struct {
 	Out, Err io.WriteCloser // Output and error streams.
 }
 
-// New instantiates a Streams object, opening files referended by the input,
+// New instantiates a Streams object, opening files referenced by the input,
 // output and error arguments.  Existing output files will be overwritten. If
-// any argument is an empty string then the appropriate standard stream is used
-// instead.  An error is returned if a file cannot be opened.
+// any argument is an empty string then the appropriate STDIN, STDOUT or STDERR
+// stream is used instead.  An error is returned if a file cannot be opened.
 func New(input, output, error string) (s *Streams, err error) {
 	r := new(Streams)
 
