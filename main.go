@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/geo-data/nicer/sample"
+	"github.com/geo-data/nicer/streams"
 	"github.com/geo-data/nicer/threshold"
 )
 
@@ -28,72 +29,50 @@ var (
 
 func main() {
 	var (
-		tcpu       = flag.Float64("cpu-threshold", 90, "percentage of cpu usage above which commands will not be executed")
-		tram       = flag.Float64("ram-threshold", 10, "percentage of free memory below which commands will not be executed")
-		tload      = flag.Float64("load-threshold", (90.0/100.0)*float64(runtime.NumCPU()), "1 minute load average above which commands will not be executed")
-		interval   = flag.Duration("interval", time.Second*1, "sampling interval for resource metrics")
-		wait       = flag.Duration("wait", time.Second*1, "duration to wait between issuing commands. Used when there is no wait on resource thresholds")
-		cin        = flag.String("input", "", "file location to read commands from. Defaults to STDIN.")
-		cout       = flag.String("stdout", "", "file location to send command standard output to. Defaults to STDOUT.")
-		cerr       = flag.String("stderr", "", "file location to send command standard error to. Defaults to STDERR.")
-		v          = flag.Bool("v", false, "print version information and exit.")
-		fout, ferr io.WriteCloser
-		fin        io.Reader
+		// Define the CLI options.
+		tcpu     = flag.Float64("cpu-threshold", 90, "percentage of cpu usage above which commands will not be executed")
+		tram     = flag.Float64("ram-threshold", 10, "percentage of free memory below which commands will not be executed")
+		tload    = flag.Float64("load-threshold", (90.0/100.0)*float64(runtime.NumCPU()), "1 minute load average above which commands will not be executed")
+		interval = flag.Duration("interval", time.Second*1, "sampling interval for resource metrics")
+		wait     = flag.Duration("wait", time.Second*1, "duration to wait between issuing commands. Used when there is no wait on resource thresholds")
+		cin      = flag.String("input", "", "file location to read commands from. Defaults to STDIN.")
+		cout     = flag.String("stdout", "", "file location to send command standard output to. Defaults to STDOUT.")
+		cerr     = flag.String("stderr", "", "file location to send command standard error to. Defaults to STDERR.")
+		v        = flag.Bool("v", false, "print version information and exit.")
 	)
 
 	flag.Parse()
 
+	// Print version information if required.
 	if *v {
 		fmt.Printf("%s commit=%s\n", version, commit)
 		os.Exit(0)
 	}
 
-	if len(*cin) > 0 {
-		fh, err := os.Open(*cin)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer fh.Close()
-		fin = fh
-	} else {
-		fin = os.Stdin
+	// Open the streams for reading commands from and writing command output to.
+	s, err := streams.New(*cin, *cout, *cerr)
+	if err != nil {
+		log.Fatal(err)
 	}
-
-	if len(*cout) > 0 {
-		fh, err := os.Create(*cout)
-		if err != nil {
-			log.Fatal(err)
+	defer func() {
+		if err := s.Close(); err != nil {
+			log.Println(err)
 		}
-		defer fh.Close()
-		fout = fh
-	} else {
-		fout = os.Stdout
-	}
+	}()
 
-	if len(*cerr) > 0 {
-		if *cerr == *cout {
-			ferr = fout
-		} else {
-			fh, err := os.Create(*cerr)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer fh.Close()
-			ferr = fh
-		}
-	} else {
-		ferr = os.Stderr
-	}
+	// Handle interrupt signals. These will be passed on to child commands via
+	// the context.
+	ctx, cancel := context.WithCancel(context.Background())
+	catchSignals(cancel)
 
+	// Define the system metric tolerances that should be maintained.
 	t := threshold.NewGroup(
 		threshold.New("cpu", sample.NewCPU(), float32(*tcpu), true),
 		threshold.New("ram", sample.Memory, float32(*tram), false),
 		threshold.New("load", sample.LoadAvg1Min, float32(*tload), true),
 	)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	catchSignals(cancel)
-
+	// Start measuring system metrics against the thresholds.
 	t.Poll(ctx, *interval,
 		func(name string, value float32, exceeded bool) {
 			if exceeded {
@@ -107,7 +86,8 @@ func main() {
 		},
 	)
 
-	scanner := bufio.NewScanner(fin)
+	// Start reading commands from the input, one command per line.
+	scanner := bufio.NewScanner(s.In)
 	commands := make(chan string, 5)
 	go func() {
 		defer close(commands)
@@ -119,11 +99,25 @@ func main() {
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			log.Println("reading standard input:", err)
+			log.Fatal(err)
 		}
 	}()
 
-	runCommands(ctx, commands, t, *wait, fout, ferr)
+	// Run the commands.
+	runCommands(ctx, commands, t, *wait, s.Out, s.Err)
+}
+
+// catchSignals cancels the context whenever an interrupt is received.
+func catchSignals(cancel context.CancelFunc) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		for sig := range c {
+			log.Printf("received %s signal", sig.String())
+			cancel()
+		}
+	}()
 }
 
 func runCommands(
@@ -203,18 +197,6 @@ Process:
 	}
 
 	wg.Wait()
-}
-
-func catchSignals(cancel context.CancelFunc) {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		for sig := range c {
-			log.Printf("received %s signal", sig.String())
-			cancel()
-		}
-	}()
 }
 
 func startCommand(ctx context.Context, cmdStr string) (cmd *exec.Cmd, stdout, stderr io.ReadCloser, err error) {
