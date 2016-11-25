@@ -70,17 +70,21 @@ capabilities.
 
 ## Limitations
 
-After deciding when to execute them, `nicer` does not manage the commands passed
-to it, other than relaying any interrupt signals it receives.  This has
-implications for long running processes which may place irregular loads on
-system resources over time: when running in parallel there is a chance that
-resource contention will increase over time even if it fell within tolerances
-**at the time** individual commands were started.
+`nicer` is not a substitute for scheduling utilities such as `nice` and `ionice`
+but should instead be used in conjunction with them where appropriate.  Unlike
+these tools `nicer` does interact with the Linux scheduler: `nicer` only decides
+**when** to execute a command and performs no other function, other than
+relaying any interrupt signals it receives.
 
-The risk of this happening is application dependent but the `-wait` flag may be
-of use in certain circumstances in delaying execution between one command and
-the next, giving the previous command time to hit its stride and affect the
-metrics sampled by `nicer`.
+This has implications for long running processes which may place irregular loads
+on system resources over time: when running in parallel there is a chance that
+resource contention between such processes will increase over time, even if it
+fell within tolerances **at the time** individual commands were started.
+
+The risk of this happening is application dependent but, in addition to `nice`
+and `ionice`, the `-wait` flag may be of use in certain circumstances in
+delaying execution between one command and the next, giving the previous command
+time to hit its stride and affect the metrics sampled by `nicer`.
 
 ## Installation
 
