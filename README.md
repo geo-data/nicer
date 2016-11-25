@@ -59,7 +59,8 @@ Usage of nicer:
         file location to send command standard error to. Defaults to STDERR.
   -stdout string
         file location to send command standard output to. Defaults to STDOUT.
-  -v    print version information and exit.
+  -version
+        print version information and exit.
   -wait duration
         duration to wait between issuing commands. Used when there is no wait on resource thresholds (default 1s)
 

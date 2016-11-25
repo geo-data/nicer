@@ -36,7 +36,7 @@ func main() {
 		cin      = flag.String("input", "", "file location to read commands from. Defaults to STDIN.")
 		cout     = flag.String("stdout", "", "file location to send command standard output to. Defaults to STDOUT.")
 		cerr     = flag.String("stderr", "", "file location to send command standard error to. Defaults to STDERR.")
-		v        = flag.Bool("v", false, "print version information and exit.")
+		v        = flag.Bool("version", false, "print version information and exit.")
 	)
 
 	flag.Parse()
