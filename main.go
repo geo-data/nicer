@@ -20,17 +20,10 @@ import (
 )
 
 // These get set on build.
-var version, commit string
-
-// init checks and optionally initialises the version strings.
-func init() {
-	if version == "" {
-		version = "No version information,"
-	}
-	if commit == "" {
-		commit = "unknown"
-	}
-}
+var (
+	version string = "No version information,"
+	commit  string = "unknown"
+)
 
 // SampleHandler represents a handler that is called every time a metric is
 // sampled.
